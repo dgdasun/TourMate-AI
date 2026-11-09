@@ -2,11 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Clock, Compass, LayoutGrid, Leaf, Map as MapIcon, MapPin, Search, Send, Sun, Ticket, X } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import BarChart from '@/components/charts/BarChart'
 import SriLankaMap from '@/components/SriLankaMap'
 import { ErrorBox, Notice, PageHeader, ProgressBar, Skeleton } from '@/components/ui'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import type { Category, Destination } from '@/lib/types'
 import {
   CATEGORIES, CATEGORY_COLOR, CATEGORY_ICON, cn, LEVEL_STYLE, MONTHS, pretty, SENTIMENT_STYLE, weatherWord
@@ -129,14 +130,16 @@ export default function Explore() {
 
 function DestinationDrawer({ destination: d, onClose }: { destination: Destination; onClose: () => void }) {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const loginState = { from: `/explore?d=${d.id}` }
   const bestTime = useQuery({ queryKey: ['best-time', d.id], queryFn: () => api.bestTime(d.id) })
   const reviews = useQuery({ queryKey: ['reviews', d.id], queryFn: () => api.reviews(d.id) })
   const checkIn = useMutation({ mutationFn: () => api.checkIn(d.id, 1), onSuccess: () => qc.invalidateQueries({ queryKey: ['crowds'] }) })
-  const [form, setForm] = useState({ visitorName: '', country: '', rating: 5, comment: '' })
+  const [form, setForm] = useState({ visitorName: user?.fullName ?? '', country: user?.country ?? '', rating: 5, comment: '' })
   const addReview = useMutation({
     mutationFn: () => api.addReview({ ...form, destinationId: d.id }),
     onSuccess: () => {
-      setForm({ visitorName: '', country: '', rating: 5, comment: '' })
+      setForm({ ...form, rating: 5, comment: '' })
       qc.invalidateQueries({ queryKey: ['reviews', d.id] })
       qc.invalidateQueries({ queryKey: ['overview'] })
     }
@@ -184,9 +187,13 @@ function DestinationDrawer({ destination: d, onClose }: { destination: Destinati
         )}
 
         <div className="flex flex-wrap items-center gap-3">
-          <button className="btn-primary" onClick={() => checkIn.mutate()} disabled={checkIn.isPending || checkIn.isSuccess}>
-            <MapPin className="h-4 w-4" /> {checkIn.isSuccess ? 'Checked in ✓' : "I'm here, check in"}
-          </button>
+          {user ? (
+            <button className="btn-primary" onClick={() => checkIn.mutate()} disabled={checkIn.isPending || checkIn.isSuccess}>
+              <MapPin className="h-4 w-4" /> {checkIn.isSuccess ? 'Checked in ✓' : "I'm here, check in"}
+            </button>
+          ) : (
+            <Link to="/login" state={loginState} className="btn-primary"><MapPin className="h-4 w-4" /> Log in to check in</Link>
+          )}
           <span className="text-sm text-slate-500">Check-ins feed the live crowd monitor.</span>
         </div>
 
@@ -207,6 +214,14 @@ function DestinationDrawer({ destination: d, onClose }: { destination: Destinati
               ))}
             </div>
           </div>
+          {!user ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 p-6 text-center dark:border-slate-700">
+              <Send className="h-6 w-6 text-slate-400" />
+              <p className="mt-2 font-semibold">Share your experience</p>
+              <p className="text-sm text-slate-500">Log in to write a review. The AI reads every review to help managers improve.</p>
+              <Link to="/login" state={loginState} className="btn-primary mt-4">Log in to review</Link>
+            </div>
+          ) : (
           <form onSubmit={submit} className="space-y-3">
             <h3 className="font-bold">Share your experience</h3>
             <div className="grid grid-cols-2 gap-3">
@@ -231,6 +246,7 @@ function DestinationDrawer({ destination: d, onClose }: { destination: Destinati
             )}
             <ErrorBox error={addReview.error} />
           </form>
+          )}
         </section>
       </motion.aside>
     </motion.div>

@@ -14,6 +14,7 @@ const STRINGS = {
     insights: 'Insights', eco: 'Eco Travel', manage: 'Manage',
     greeting: 'Ayubowan!', heroTitle: 'Explore Sri Lanka with', heroText:
       'An AI-powered smart tourism platform. Plan better trips, avoid the crowds and travel sustainably, while destination managers predict demand and grow tourism responsibly.',
+    dashboard: 'Dashboard', login: 'Log in', signup: 'Sign up free', logout: 'Log out', getStarted: 'Get started free',
     planTrip: 'Plan my trip', askAi: 'Ask the AI assistant', askPlaceholder: 'Ask anything about travelling in Sri Lanka…', send: 'Send'
   },
   si: {
@@ -21,6 +22,7 @@ const STRINGS = {
     insights: 'විශ්ලේෂණ', eco: 'පරිසර හිතකාමී සංචාර', manage: 'කළමනාකරණය',
     greeting: 'ආයුබෝවන්!', heroTitle: 'ශ්‍රී ලංකාව ගවේෂණය කරන්න', heroText:
       'කෘත්‍රිම බුද්ධියෙන් බලගැන්වූ ස්මාර්ට් සංචාරක වේදිකාවක්. වඩා හොඳ සංචාර සැලසුම් කරන්න, සෙනඟ මඟහරින්න, පරිසරයට හිතකාමීව සංචාරය කරන්න.',
+    dashboard: 'මගේ පුවරුව', login: 'පිවිසෙන්න', signup: 'නොමිලේ ලියාපදිංචි වන්න', logout: 'ඉවත් වන්න', getStarted: 'නොමිලේ ආරම්භ කරන්න',
     planTrip: 'මගේ සංචාරය සැලසුම් කරන්න', askAi: 'AI සහායකගෙන් අහන්න', askPlaceholder: 'ශ්‍රී ලංකාවේ සංචාරය ගැන ඕනෑම දෙයක් අහන්න…', send: 'යවන්න'
   },
   ta: {
@@ -28,6 +30,7 @@ const STRINGS = {
     insights: 'பகுப்பாய்வு', eco: 'சூழல் நட்பு பயணம்', manage: 'நிர்வாகம்',
     greeting: 'வணக்கம்!', heroTitle: 'இலங்கையை ஆராயுங்கள்', heroText:
       'செயற்கை நுண்ணறிவால் இயங்கும் ஸ்மார்ட் சுற்றுலா தளம். சிறந்த பயணங்களைத் திட்டமிடுங்கள், கூட்டத்தைத் தவிர்க்கவும், சுற்றுச்சூழலுக்கு நட்பாகப் பயணம் செய்யுங்கள்.',
+    dashboard: 'எனது பலகை', login: 'உள்நுழை', signup: 'இலவசமாகப் பதிவு செய்', logout: 'வெளியேறு', getStarted: 'இலவசமாகத் தொடங்கு',
     planTrip: 'எனது பயணத்தைத் திட்டமிடு', askAi: 'AI உதவியாளரிடம் கேளுங்கள்', askPlaceholder: 'இலங்கைப் பயணம் பற்றி எதையும் கேளுங்கள்…', send: 'அனுப்பு'
   }
 } satisfies Record<Lang, Record<string, string>>

@@ -14,13 +14,22 @@ predict demand, manage crowds and grow tourism sustainably, all on one platform.
 
 | Competition area | TourMate AI feature | Where |
 |---|---|---|
-| Smart travel planning & personalised tourism | **AI Trip Planner**: personalised, monsoon-aware itineraries with route optimisation, cost breakdown and carbon footprint | `Trip Planner` page |
+| Smart travel planning & personalised tourism | **Trip Planner**: build your own itinerary or start from an AI suggestion, then customise it (drag to reorder, move between days, notes) with live cost, crowd and carbon figures. Trips are saved only when you choose | `Trip Planner` page |
 | AI-powered customer service & visitor assistance | **24/7 AI Assistant**: chat powered by Claude, with an offline knowledge base fallback | `AI Assistant` page |
 | Smart destination management systems | **Destination Manager**: register destinations with capacity, climate zone and eco rating; AI recommendations from visitor feedback | `Manage`, `Insights` pages |
 | Predictive analytics for demand & visitor behaviour | **Demand Forecasting**: 12-month visitor forecast per destination using seasonal time-series decomposition | `Insights` page |
 | Sustainable tourism & environmental monitoring | **Eco Travel**: CO₂ comparison of transport modes, eco scores and sustainable travel tips | `Eco Travel` page |
 | Digital marketing & visitor experience | **Review Sentiment AI**: every review is scored for sentiment and topics (cleanliness, crowds, price…) | `Explore` → destination, `Insights` |
 | Smart mobility & visitor flow management | **Live Crowd Monitor**: real-time crowd levels, best hour to visit, quieter alternatives nearby, visitor check-ins | `Live Crowds` page |
+
+### Accounts & security
+
+- **Modern login and registration pages** with password-strength meter, show/hide password and one-click demo accounts.
+- **Personal dashboard** after login: greeting, quick actions, *My trips*, this month's best-weather places and the busiest places right now.
+- **Roles:** *Traveller* (plans trips, chats, reviews, checks in) and *Manager* (also adds and removes destinations).
+  Anyone can browse destinations, crowds and the eco calculator without an account.
+- **Security:** Spring Security with stateless **JWT** tokens (HMAC-SHA256, 24 h expiry), passwords hashed with **BCrypt**,
+  role-based access rules on every API route, and automatic sign-out when a token expires.
 
 ### Modern web experience
 
@@ -65,7 +74,7 @@ predict demand, manage crowds and grow tourism sustainably, all on one platform.
 |---|---|
 | Frontend | React 18 + **TypeScript**, Vite 5, **Tailwind CSS**, **TanStack Query** (data fetching & caching), **Framer Motion** (animation), **Leaflet** + OpenStreetMap (interactive maps), Lucide icons, React Router 6 (lazy-loaded pages), hand-built SVG charts |
 | UX | Responsive (mobile → desktop), light / dark / system theme, **English · සිංහල · தமிழ்** language switch |
-| Backend | Java 21+, Spring Boot 4.1 (Web MVC, Data JPA, Validation), Lombok |
+| Backend | Java 21+, Spring Boot 4.1 (Web MVC, Data JPA, Validation, **Spring Security**), Nimbus JOSE JWT, BCrypt, Lombok |
 | Database | MySQL 8 (tables are created automatically by Hibernate) |
 | Generative AI | Anthropic Java SDK (`anthropic-java` 3.2.0), model `claude-opus-5-5` |
 
@@ -137,7 +146,23 @@ $env:ANTHROPIC_API_KEY = "sk-ant-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 ```
 
-### 3. Run the backend
+### 3. Demo accounts
+
+Two accounts are created automatically on first start:
+
+| Role | Email | Password |
+|---|---|---|
+| Traveller | `demo@tourmate.lk` | `Demo@1234` |
+| Manager | `manager@tourmate.lk` | `Manager@123` |
+
+New sign-ups are always Travellers. For any real deployment, change these passwords and set a strong `JWT_SECRET`
+(32+ random characters); without it the backend uses a development secret and logs a warning.
+
+```powershell
+$env:JWT_SECRET = "<a long random string of at least 32 characters>"
+```
+
+### 4. Run the backend
 
 ```bash
 cd backend/tourmate
@@ -147,7 +172,7 @@ mvn spring-boot:run          # or: ./mvnw spring-boot:run
 On first start it seeds **24 real Sri Lankan destinations**, **36 months of visitor statistics** and sample reviews.
 The API is ready when the log shows `Started TourmateApplication`. Check it at <http://localhost:9090/api/test>.
 
-### 4. Run the frontend
+### 5. Run the frontend
 
 ```bash
 cd frontend
@@ -187,32 +212,52 @@ java -jar target/tourmate-0.0.1-SNAPSHOT.jar
 
 Base URL: `http://localhost:9090/api`
 
+Access: 🌐 public · 🔑 signed in (`Authorization: Bearer <token>`) · 🏛️ Manager only
+
 | Method | Endpoint | Description |
 |---|---|---|
+| POST | `/auth/register` | 🌐 Create a traveller account; returns a JWT |
+| POST | `/auth/login` | 🌐 Log in; returns a JWT |
+| GET | `/auth/me` | 🔑 The signed-in user's profile |
 | GET | `/destinations?category=&month=&search=` | List destinations, ranked by weather suitability for the month |
 | GET | `/destinations/{id}` | Destination details |
-| POST | `/destinations` | Add a destination |
-| PUT | `/destinations/{id}` | Update a destination |
-| DELETE | `/destinations/{id}` | Delete a destination with its reviews and statistics |
-| POST | `/planner/itinerary` | Generate a personalised itinerary |
-| GET | `/planner/recent` | Recently generated trips |
-| POST | `/assistant/chat` | Chat with the AI assistant |
+| POST | `/destinations` | 🏛️ Add a destination |
+| PUT | `/destinations/{id}` | 🏛️ Update a destination |
+| DELETE | `/destinations/{id}` | 🏛️ Delete a destination with its reviews and statistics |
+| POST | `/planner/itinerary` | 🔑 AI itinerary suggestion (not saved) |
+| POST | `/planner/evaluate` | 🔑 Costs, distance, carbon and crowds for a custom itinerary `{ "days": [[1, 3], [6]], "month": 2, ... }` (not saved) |
+| GET | `/trips` | 🔑 The signed-in user's saved trips |
+| GET | `/trips/{id}` | 🔑 One saved trip with its stops and notes |
+| POST | `/trips` | 🔑 Save a trip (title, settings, stops per day with notes) |
+| PUT | `/trips/{id}` | 🔑 Update a saved trip |
+| DELETE | `/trips/{id}` | 🔑 Delete a saved trip |
+| POST | `/assistant/chat` | 🔑 Chat with the AI assistant |
 | GET | `/assistant/status` | Whether Claude AI is enabled |
 | GET | `/analytics/overview` | Dashboard KPIs, national trend, busiest places, recent reviews |
-| GET | `/analytics/forecast/{id}` | 36-month history plus 12-month demand forecast |
-| GET | `/analytics/insights/{id}` | Review sentiment, topics and recommendations for managers |
+| GET | `/analytics/forecast/{id}` | 🔑 36-month history plus 12-month demand forecast |
+| GET | `/analytics/insights/{id}` | 🔑 Review sentiment, topics and recommendations for managers |
 | GET | `/reviews?destinationId=` | List reviews |
-| POST | `/reviews` | Submit a review (sentiment is analysed automatically) |
+| POST | `/reviews` | 🔑 Submit a review (sentiment is analysed automatically) |
 | GET | `/mobility/crowds?hour=` | Live crowd level for every destination (optionally for an hour today) |
 | GET | `/mobility/best-time/{id}?date=` | Expected visitors by hour and the best hour to visit |
-| POST | `/mobility/check-in` | Record a visitor check-in `{ "destinationId": 1, "groupSize": 2 }` |
+| POST | `/mobility/check-in` | 🔑 Record a visitor check-in `{ "destinationId": 1, "groupSize": 2 }` |
 | GET | `/sustainability/footprint?distanceKm=&travellers=` | CO₂, cost and time per transport mode |
+
+### Example: log in
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:9090/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"demo@tourmate.lk","password":"Demo@1234"}' | python -c "import sys,json;print(json.load(sys.stdin)['token'])")
+```
+
+The examples below send this token with `-H "Authorization: Bearer $TOKEN"`.
 
 ### Example: plan a trip
 
 ```bash
 curl -X POST http://localhost:9090/api/planner/itinerary \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
   -d '{"days":5,"month":2,"interests":["BEACH","WILDLIFE"],"budget":"MID_RANGE","transport":"TRAIN","pace":"BALANCED","travellers":2}'
 ```
 
@@ -229,7 +274,7 @@ curl -X POST http://localhost:9090/api/planner/itinerary \
 
 ```bash
 curl -X POST http://localhost:9090/api/assistant/chat \
-  -H "Content-Type: application/json" \
+  -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"When is the best time to visit Arugam Bay?","history":[],"language":"English"}'
 ```
 

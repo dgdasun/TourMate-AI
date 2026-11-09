@@ -7,6 +7,64 @@ export type Sentiment = 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE'
 export type Budget = 'BUDGET' | 'MID_RANGE' | 'LUXURY'
 export type Transport = 'CAR' | 'EV' | 'TRAIN' | 'BUS' | 'TUK_TUK'
 export type Pace = 'RELAXED' | 'BALANCED' | 'PACKED'
+export type Role = 'TRAVELLER' | 'MANAGER'
+
+export interface User {
+  id: number
+  fullName: string
+  email: string
+  role: Role
+  country: string | null
+  createdAt: string
+}
+
+export interface AuthResponse {
+  token: string
+  /** seconds */
+  expiresIn: number
+  user: User
+}
+
+export interface TripSummary {
+  id: number
+  title: string
+  days: number
+  travelMonth: number
+  travellers: number | null
+  budget: Budget
+  transport: Transport
+  destinations: string
+  totalCostUsd: number
+  carbonKg: number
+  createdAt: string
+  updatedAt: string | null
+}
+
+export interface StopInput {
+  destinationId: number
+  note: string | null
+}
+
+/** Trip settings shared by evaluating and saving. */
+export interface TripSettings {
+  month: number
+  travellers: number
+  budget: Budget
+  transport: Transport
+  interests: Category[]
+}
+
+export interface TripRequest extends TripSettings {
+  title: string
+  notes: string | null
+  days: StopInput[][]
+}
+
+export interface TripDetail extends TripRequest {
+  id: number
+  createdAt: string
+  updatedAt: string | null
+}
 
 export interface Destination {
   id: number

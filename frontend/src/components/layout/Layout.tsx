@@ -1,30 +1,37 @@
 import { useQuery } from '@tanstack/react-query'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
-  BarChart3, Bot, Compass, Leaf, Map as MapIcon, Menu, Monitor, Moon, Palmtree, Settings2, Sun, Users, X, Home
+  BarChart3, Bot, ChevronDown, Compass, Home, LayoutDashboard, Leaf, LogOut, Map as MapIcon, Menu, Monitor, Moon, Palmtree,
+  Settings2, Sun, Users, X
 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { api } from '@/lib/api'
+import { initials, useAuth } from '@/lib/auth'
 import { LANGUAGES, useI18n, type StringKey } from '@/lib/i18n'
 import { useTheme } from '@/lib/theme'
 import { cn } from '@/lib/utils'
 
-const LINKS: { to: string; key: StringKey; icon: typeof Home }[] = [
+type NavItem = { to: string; key: StringKey; icon: typeof Home; access?: 'user' | 'manager' }
+
+const LINKS: NavItem[] = [
   { to: '/', key: 'home', icon: Home },
+  { to: '/dashboard', key: 'dashboard', icon: LayoutDashboard, access: 'user' },
   { to: '/explore', key: 'explore', icon: Compass },
   { to: '/planner', key: 'planner', icon: MapIcon },
   { to: '/assistant', key: 'assistant', icon: Bot },
   { to: '/crowds', key: 'crowds', icon: Users },
   { to: '/insights', key: 'insights', icon: BarChart3 },
   { to: '/sustainability', key: 'eco', icon: Leaf },
-  { to: '/manage', key: 'manage', icon: Settings2 }
+  { to: '/manage', key: 'manage', icon: Settings2, access: 'manager' }
 ]
 
 export default function Layout({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false)
   const { pathname } = useLocation()
   const { t } = useI18n()
+  const { user } = useAuth()
+  const links = LINKS.filter((l) => !l.access || (user && (l.access === 'user' || user.role === 'MANAGER')))
 
   useEffect(() => {
     setOpen(false)
@@ -40,10 +47,10 @@ export default function Layout({ children }: { children: ReactNode }) {
             TourMate <span className="text-gold-400">AI</span>
           </NavLink>
 
-          <nav className="ml-4 hidden items-center gap-1 xl:flex">
-            {LINKS.map(({ to, key }) => (
+          <nav className="ml-2 hidden items-center gap-0.5 xl:flex">
+            {links.map(({ to, key }) => (
               <NavLink key={to} to={to} end={to === '/'}
-                className={({ isActive }) => cn('rounded-full px-3 py-1.5 text-sm font-medium transition',
+                className={({ isActive }) => cn('whitespace-nowrap rounded-full px-2.5 py-1.5 text-sm font-medium transition',
                   isActive ? 'bg-gold-500 text-brand-900' : 'text-blue-100 hover:bg-white/10')}>
                 {t(key)}
               </NavLink>
@@ -54,6 +61,12 @@ export default function Layout({ children }: { children: ReactNode }) {
             <AiStatus />
             <LanguageSwitch />
             <ThemeSwitch />
+            {user ? <UserMenu /> : (
+              <div className="hidden items-center gap-2 sm:flex">
+                <Link to="/login" className="rounded-lg px-3 py-1.5 text-sm font-semibold text-blue-100 hover:bg-white/10">{t('login')}</Link>
+                <Link to="/register" className="btn-gold px-3.5 py-1.5">{t('signup')}</Link>
+              </div>
+            )}
             <button className="rounded-lg p-2 hover:bg-white/10 xl:hidden" onClick={() => setOpen(!open)} aria-label="Menu">
               {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </button>
@@ -65,7 +78,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             <motion.nav initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
               className="overflow-hidden border-t border-white/10 xl:hidden">
               <div className="mx-auto grid max-w-7xl grid-cols-2 gap-1 px-4 py-3 sm:grid-cols-4">
-                {LINKS.map(({ to, key, icon: Icon }) => (
+                {links.map(({ to, key, icon: Icon }) => (
                   <NavLink key={to} to={to} end={to === '/'}
                     className={({ isActive }) => cn('flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium',
                       isActive ? 'bg-gold-500 text-brand-900' : 'text-blue-100 hover:bg-white/10')}>
@@ -73,6 +86,12 @@ export default function Layout({ children }: { children: ReactNode }) {
                   </NavLink>
                 ))}
               </div>
+              {!user && (
+                <div className="mx-auto grid max-w-7xl grid-cols-2 gap-2 px-4 pb-4 sm:hidden">
+                  <Link to="/login" className="btn border border-white/30 text-white">{t('login')}</Link>
+                  <Link to="/register" className="btn-gold">{t('signup')}</Link>
+                </div>
+              )}
             </motion.nav>
           )}
         </AnimatePresence>
@@ -97,7 +116,7 @@ function AiStatus() {
   const { data, isError } = useQuery({ queryKey: ['ai-status'], queryFn: api.aiStatus, staleTime: 60_000 })
   const on = data?.aiEnabled
   return (
-    <span className="hidden items-center gap-1.5 rounded-full bg-white/10 px-3 py-1 text-xs md:flex"
+    <span className="hidden items-center gap-1.5 whitespace-nowrap rounded-full bg-white/10 px-3 py-1 text-xs md:flex xl:hidden 2xl:flex"
       title={on ? 'Claude AI is connected' : 'Running on the built-in offline AI engine'}>
       <span className={cn('h-2 w-2 rounded-full', isError ? 'bg-red-400' : on ? 'bg-emerald-400' : 'bg-gold-400')} />
       {isError ? 'Backend offline' : on ? 'Claude AI' : 'Offline AI'}
@@ -127,5 +146,54 @@ function ThemeSwitch() {
     <button onClick={() => setTheme(next)} className="rounded-lg p-2 hover:bg-white/10" title={`Theme: ${theme} (click for ${next})`} aria-label="Toggle theme">
       <Icon className="h-4 w-4" />
     </button>
+  )
+}
+
+function UserMenu() {
+  const { user, logout } = useAuth()
+  const { t } = useI18n()
+  const navigate = useNavigate()
+  const [open, setOpen] = useState(false)
+  if (!user) return null
+
+  const signOut = () => {
+    logout()
+    navigate('/')
+  }
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen(!open)} className="flex items-center gap-2 rounded-full bg-white/10 py-1 pl-1 pr-2 hover:bg-white/20" aria-label="Account menu">
+        <span className="grid h-7 w-7 place-items-center rounded-full bg-gold-500 text-xs font-bold text-brand-900">{initials(user.fullName)}</span>
+        <span className="hidden max-w-28 truncate text-sm font-medium 2xl:block">{user.fullName.split(' ')[0]}</span>
+        <ChevronDown className="h-3.5 w-3.5" />
+      </button>
+      <AnimatePresence>
+        {open && (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+            <motion.div initial={{ opacity: 0, y: -6, scale: 0.97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: -6, scale: 0.97 }}
+              className="absolute right-0 z-50 mt-2 w-64 overflow-hidden rounded-2xl border border-slate-200 bg-white text-slate-900 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+              <div className="border-b border-slate-100 p-4 dark:border-slate-800">
+                <div className="font-semibold">{user.fullName}</div>
+                <div className="truncate text-xs text-slate-500">{user.email}</div>
+                <span className="chip mt-2">{user.role === 'MANAGER' ? '🏛️ Manager' : '🧳 Traveller'}</span>
+              </div>
+              <div className="p-1.5">
+                <Link to="/dashboard" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                  <LayoutDashboard className="h-4 w-4" /> {t('dashboard')}
+                </Link>
+                <Link to="/planner" onClick={() => setOpen(false)} className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm hover:bg-slate-100 dark:hover:bg-slate-800">
+                  <MapIcon className="h-4 w-4" /> {t('planner')}
+                </Link>
+                <button onClick={signOut} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10">
+                  <LogOut className="h-4 w-4" /> {t('logout')}
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </div>
   )
 }

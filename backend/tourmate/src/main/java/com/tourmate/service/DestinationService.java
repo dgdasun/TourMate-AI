@@ -8,6 +8,7 @@ import com.tourmate.exception.NotFoundException;
 import com.tourmate.repository.CheckInRepository;
 import com.tourmate.repository.DestinationRepository;
 import com.tourmate.repository.ReviewRepository;
+import com.tourmate.repository.TripStopRepository;
 import com.tourmate.repository.VisitStatRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,15 +25,18 @@ public class DestinationService {
     private final ReviewRepository reviewRepository;
     private final CheckInRepository checkInRepository;
     private final VisitStatRepository visitStatRepository;
+    private final TripStopRepository tripStopRepository;
     private final ForecastService forecastService;
 
     public DestinationService(DestinationRepository destinationRepository, ReviewRepository reviewRepository,
                               CheckInRepository checkInRepository, VisitStatRepository visitStatRepository,
+                              TripStopRepository tripStopRepository,
                               ForecastService forecastService) {
         this.destinationRepository = destinationRepository;
         this.reviewRepository = reviewRepository;
         this.checkInRepository = checkInRepository;
         this.visitStatRepository = visitStatRepository;
+        this.tripStopRepository = tripStopRepository;
         this.forecastService = forecastService;
     }
 
@@ -72,6 +76,7 @@ public class DestinationService {
         reviewRepository.deleteByDestinationId(id);
         checkInRepository.deleteByDestinationId(id);
         visitStatRepository.deleteByDestinationId(id);
+        tripStopRepository.deleteByDestinationId(id); // drop it from saved trips too
         destinationRepository.delete(d);
         forecastService.invalidate(id);
     }

@@ -2,33 +2,32 @@ package com.tourmate.controller;
 
 import com.tourmate.dto.PlanRequest;
 import com.tourmate.dto.PlanResponse;
-import com.tourmate.entity.TripPlan;
-import com.tourmate.repository.TripPlanRepository;
+import com.tourmate.dto.TripDtos.EvaluateRequest;
 import com.tourmate.service.PlannerService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
-
+/** Itinerary maths. Neither endpoint saves anything - saving is done explicitly through /api/trips. */
 @RestController
 @RequestMapping("/api/planner")
 public class PlannerController {
 
     private final PlannerService plannerService;
-    private final TripPlanRepository tripPlanRepository;
 
-    public PlannerController(PlannerService plannerService, TripPlanRepository tripPlanRepository) {
+    public PlannerController(PlannerService plannerService) {
         this.plannerService = plannerService;
-        this.tripPlanRepository = tripPlanRepository;
     }
 
+    /** AI suggestion based on interests, weather, crowds and sustainability. */
     @PostMapping("/itinerary")
     public PlanResponse plan(@Valid @RequestBody PlanRequest request) {
         return plannerService.plan(request);
     }
 
-    @GetMapping("/recent")
-    public List<TripPlan> recent() {
-        return tripPlanRepository.findTop10ByOrderByCreatedAtDesc();
+    /** Costs, distances, carbon and crowd levels for an itinerary the traveller built or edited. */
+    @PostMapping("/evaluate")
+    public PlanResponse evaluate(@Valid @RequestBody EvaluateRequest request) {
+        return plannerService.evaluate(request.days(), request.month(), request.interests(), request.budget(),
+                request.transport(), request.travellers());
     }
 }

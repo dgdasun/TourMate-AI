@@ -6,12 +6,11 @@ import com.tourmate.dto.PlanResponse.CostBreakdown;
 import com.tourmate.dto.PlanResponse.DayPlan;
 import com.tourmate.dto.PlanResponse.Stop;
 import com.tourmate.entity.Destination;
-import com.tourmate.entity.TripPlan;
 import com.tourmate.enums.BudgetLevel;
 import com.tourmate.enums.Category;
 import com.tourmate.enums.TransportMode;
+import com.tourmate.exception.NotFoundException;
 import com.tourmate.repository.DestinationRepository;
-import com.tourmate.repository.TripPlanRepository;
 import com.tourmate.util.GeoUtil;
 import org.springframework.stereotype.Service;
 
@@ -46,25 +45,19 @@ public class PlannerService {
     private static final Set<TransportMode> PRIVATE_VEHICLES = EnumSet.of(TransportMode.CAR, TransportMode.EV, TransportMode.TUK_TUK);
 
     private final DestinationRepository destinationRepository;
-    private final TripPlanRepository tripPlanRepository;
     private final CrowdService crowdService;
     private final AiService aiService;
 
-    public PlannerService(DestinationRepository destinationRepository, TripPlanRepository tripPlanRepository,
-                          CrowdService crowdService, AiService aiService) {
+    public PlannerService(DestinationRepository destinationRepository, CrowdService crowdService, AiService aiService) {
         this.destinationRepository = destinationRepository;
-        this.tripPlanRepository = tripPlanRepository;
         this.crowdService = crowdService;
         this.aiService = aiService;
     }
 
+    /** AI suggestion: picks and orders the stops. Nothing is saved - the traveller reviews, edits and saves it. */
     public PlanResponse plan(PlanRequest req) {
         int month = req.month() != null ? req.month() : LocalDate.now().getMonthValue();
-        Set<Category> interests = req.interests() == null || req.interests().isEmpty()
-                ? EnumSet.allOf(Category.class) : EnumSet.copyOf(req.interests());
-        BudgetLevel budget = req.budget() != null ? req.budget() : BudgetLevel.MID_RANGE;
-        TransportMode transport = req.transport() != null ? req.transport() : TransportMode.CAR;
-        int travellers = req.travellers() != null ? req.travellers() : 2;
+        Set<Category> interests = interests(req.interests());
         int stopsPerDay = switch (req.pace() == null ? "BALANCED" : req.pace().toUpperCase(Locale.ROOT)) {
             case "RELAXED" -> 1;
             case "PACKED" -> 3;
@@ -74,12 +67,9 @@ public class PlannerService {
 
         // score every destination once
         Map<Long, Double> scores = new HashMap<>();
-        Map<Long, String> crowd = new HashMap<>();
         List<Destination> candidates = new ArrayList<>(destinationRepository.findAll());
         for (Destination d : candidates) {
-            String level = crowdService.expectedDailyLevel(d, travelMonth);
-            crowd.put(d.getId(), level);
-            scores.put(d.getId(), score(d, interests, month, level));
+            scores.put(d.getId(), score(d, interests, month, crowdService.expectedDailyLevel(d, travelMonth)));
         }
 
         // greedy route: best score minus distance penalty from where we are now
@@ -101,54 +91,104 @@ public class PlannerService {
         }
 
         // split the route into days
-        List<DayPlan> days = new ArrayList<>();
-        double totalKm = 0;
-        double entryFees = 0;
-        lat = START_LAT;
-        lon = START_LON;
+        List<List<Destination>> days = new ArrayList<>();
         for (int day = 0; day < req.days(); day++) {
             int from = Math.min(day * stopsPerDay, route.size());
-            int to = Math.min(from + stopsPerDay, route.size());
-            List<Stop> stops = new ArrayList<>();
-            double dayKm = 0;
-            for (Destination d : route.subList(from, to)) {
-                dayKm += GeoUtil.roadKm(lat, lon, d.getLatitude(), d.getLongitude());
-                lat = d.getLatitude();
-                lon = d.getLongitude();
-                entryFees += d.getEntryFeeUsd();
-                stops.add(new Stop(d.getId(), d.getName(), d.getCategory(), d.getProvince(),
-                        (int) Math.round(scores.get(d.getId()) * 100), d.getClimateZone().suitability(month),
-                        crowd.get(d.getId()), d.getEntryFeeUsd(), d.getAvgVisitHours(),
-                        reason(d, interests, month, crowd.get(d.getId()))));
-            }
-            if (day == req.days() - 1) {
-                dayKm += GeoUtil.roadKm(lat, lon, START_LAT, START_LON); // back to the airport
-            }
-            String base = stops.isEmpty() ? (day == req.days() - 1 ? "Departure" : "Free day") : stops.get(stops.size() - 1).name();
-            days.add(new DayPlan(day + 1, base, stops, GeoUtil.round(dayKm, 0),
-                    GeoUtil.round(dayKm / transport.avgSpeedKmh(), 1)));
-            totalKm += dayKm;
+            days.add(route.subList(from, Math.min(from + stopsPerDay, route.size())));
         }
 
-        CostBreakdown cost = cost(req.days(), travellers, budget, transport, totalKm, entryFees);
-        double carbon = carbonKg(transport, totalKm, travellers);
-        double carCarbon = carbonKg(TransportMode.CAR, totalKm, travellers);
-
-        String monthName = ForecastService.monthName(month);
-        PlanResponse draft = new PlanResponse(req.days(), monthName, travellers, transport.label(), days, cost,
-                GeoUtil.round(totalKm, 0), GeoUtil.round(carbon, 1), GeoUtil.round(Math.max(0, carCarbon - carbon), 1),
-                ecoTips(transport, route, month), null, false);
+        BudgetLevel budget = req.budget() != null ? req.budget() : BudgetLevel.MID_RANGE;
+        PlanResponse draft = build(days, month, interests, budget, transport(req.transport()), travellers(req.travellers()));
 
         String aiSummary = aiService.complete(
                         "You are TourMate AI, a friendly Sri Lanka travel expert. Write in plain text, no markdown headings.",
                         List.of(), summaryPrompt(draft, budget))
                 .orElse(null);
+        return withSummary(draft, aiSummary != null ? aiSummary : offlineSummary(draft, route), aiSummary != null);
+    }
 
-        save(req, month, interests, budget, transport, route, cost, carbon);
+    /**
+     * Costs, distances, carbon, weather and crowds for an itinerary the traveller built or edited themselves.
+     *
+     * @param dayStops destination ids per day, in visiting order
+     */
+    public PlanResponse evaluate(List<List<Long>> dayStops, Integer month, List<Category> interests, BudgetLevel budget,
+                                 TransportMode transport, Integer travellers) {
+        Map<Long, Destination> byId = destinationRepository.findAllById(dayStops.stream().flatMap(List::stream).toList())
+                .stream().collect(Collectors.toMap(Destination::getId, d -> d));
+        List<List<Destination>> days = new ArrayList<>();
+        for (List<Long> ids : dayStops) {
+            List<Destination> day = new ArrayList<>();
+            for (Long id : ids) {
+                Destination d = byId.get(id);
+                if (d == null) {
+                    throw new NotFoundException("Destination " + id + " not found");
+                }
+                day.add(d);
+            }
+            days.add(day);
+        }
+        int m = month != null ? month : LocalDate.now().getMonthValue();
+        return build(days, m, interests(interests), budget != null ? budget : BudgetLevel.MID_RANGE,
+                transport(transport), travellers(travellers));
+    }
 
-        return new PlanResponse(draft.days(), draft.month(), draft.travellers(), draft.transport(), draft.itinerary(),
-                draft.cost(), draft.totalDistanceKm(), draft.carbonKg(), draft.carbonSavedVsCarKg(), draft.ecoTips(),
-                aiSummary != null ? aiSummary : offlineSummary(draft, route), aiSummary != null);
+    /** Turns stops-per-day into a full plan: travel legs (airport to airport), costs, carbon and per-stop advice. */
+    private PlanResponse build(List<List<Destination>> dayStops, int month, Set<Category> interests, BudgetLevel budget,
+                               TransportMode transport, int travellers) {
+        YearMonth travelMonth = nextOccurrence(month);
+        List<DayPlan> days = new ArrayList<>();
+        List<Destination> route = new ArrayList<>();
+        double totalKm = 0;
+        double entryFees = 0;
+        double lat = START_LAT;
+        double lon = START_LON;
+        for (int day = 0; day < dayStops.size(); day++) {
+            List<Stop> stops = new ArrayList<>();
+            double dayKm = 0;
+            for (Destination d : dayStops.get(day)) {
+                String crowd = crowdService.expectedDailyLevel(d, travelMonth);
+                dayKm += GeoUtil.roadKm(lat, lon, d.getLatitude(), d.getLongitude());
+                lat = d.getLatitude();
+                lon = d.getLongitude();
+                entryFees += d.getEntryFeeUsd();
+                route.add(d);
+                stops.add(new Stop(d.getId(), d.getName(), d.getCategory(), d.getProvince(),
+                        (int) Math.round(score(d, interests, month, crowd) * 100), d.getClimateZone().suitability(month),
+                        crowd, d.getEntryFeeUsd(), d.getAvgVisitHours(), reason(d, interests, month, crowd)));
+            }
+            if (day == dayStops.size() - 1) {
+                dayKm += GeoUtil.roadKm(lat, lon, START_LAT, START_LON); // back to the airport
+            }
+            String base = stops.isEmpty() ? (day == dayStops.size() - 1 ? "Departure" : "Free day") : stops.get(stops.size() - 1).name();
+            days.add(new DayPlan(day + 1, base, stops, GeoUtil.round(dayKm, 0),
+                    GeoUtil.round(dayKm / transport.avgSpeedKmh(), 1)));
+            totalKm += dayKm;
+        }
+
+        CostBreakdown cost = cost(dayStops.size(), travellers, budget, transport, totalKm, entryFees);
+        double carbon = carbonKg(transport, totalKm, travellers);
+        double carCarbon = carbonKg(TransportMode.CAR, totalKm, travellers);
+        return new PlanResponse(dayStops.size(), ForecastService.monthName(month), travellers, transport.label(), days, cost,
+                GeoUtil.round(totalKm, 0), GeoUtil.round(carbon, 1), GeoUtil.round(Math.max(0, carCarbon - carbon), 1),
+                ecoTips(transport, route, month), null, false);
+    }
+
+    private static PlanResponse withSummary(PlanResponse p, String summary, boolean aiPowered) {
+        return new PlanResponse(p.days(), p.month(), p.travellers(), p.transport(), p.itinerary(), p.cost(),
+                p.totalDistanceKm(), p.carbonKg(), p.carbonSavedVsCarKg(), p.ecoTips(), summary, aiPowered);
+    }
+
+    private static Set<Category> interests(List<Category> interests) {
+        return interests == null || interests.isEmpty() ? EnumSet.allOf(Category.class) : EnumSet.copyOf(interests);
+    }
+
+    private static TransportMode transport(TransportMode transport) {
+        return transport != null ? transport : TransportMode.CAR;
+    }
+
+    private static int travellers(Integer travellers) {
+        return travellers != null ? travellers : 2;
     }
 
     private static double score(Destination d, Set<Category> interests, int month, String crowdLevel) {
@@ -258,20 +298,6 @@ public class PlannerService {
                         + "Dress modestly (shoulders and knees covered) at temples, and remove shoes and hats before entering.",
                 plan.days(), route.size(), highlights.isEmpty() ? "relaxation" : highlights, plan.totalDistanceKm(),
                 plan.transport().toLowerCase(Locale.ROOT), plan.month());
-    }
-
-    private void save(PlanRequest req, int month, Set<Category> interests, BudgetLevel budget, TransportMode transport,
-                      List<Destination> route, CostBreakdown cost, double carbon) {
-        TripPlan plan = new TripPlan();
-        plan.setDays(req.days());
-        plan.setTravelMonth(month);
-        plan.setInterests(interests.stream().map(Enum::name).collect(Collectors.joining(",")));
-        plan.setBudget(budget.name());
-        plan.setTransport(transport.name());
-        plan.setDestinations(route.stream().map(Destination::getName).collect(Collectors.joining(", ")));
-        plan.setTotalCostUsd(cost.total());
-        plan.setCarbonKg(GeoUtil.round(carbon, 1));
-        tripPlanRepository.save(plan);
     }
 
     /** The next time this calendar month comes round (this month counts). */
